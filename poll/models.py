@@ -21,7 +21,7 @@ from generic.sorters import SimpleSorter
 
 from rapidsms.contrib.locations.models import Location
 from rapidsms.contrib.locations.nested import models as nested_models
-from rapidsms_httprouter.models import Message, MessageBatch
+from rapidsms_httprouter.models import Message
 
 from django.conf import settings
 import re
@@ -83,6 +83,16 @@ class ResponseCategory(models.Model):
     response = models.ForeignKey('Response', related_name='categories')
     is_override = models.BooleanField(default=False)
     user = models.ForeignKey(User, null=True)
+
+class Survey(models.Model):
+    name=models.CharField(max_length=100,null=True,blank=True)
+    poll_list=models.ForeignKey("SurveyPoll",related_name="surveys")
+
+class SurveyPoll(models.Model):
+    survey=models.ForeignKey("Survey",related_name="polls")
+    poll=models.OneToOneField("Poll",related_name="polls")
+    order=models.PositiveIntegerField(max_length=2)
+    skip_rules=models.CharField(max_length=200)
 
 
 class Poll(models.Model):
@@ -252,11 +262,6 @@ class Poll(models.Model):
         log.info("[Poll.create_with_bulk] Adding contacts...")
         poll.contacts.add(*contacts.values_list('pk', flat=True))
 
-        log.info("[Poll.create_with_bulk] Create message batch...")
-        batch = MessageBatch.objects.get_or_create(name=str(poll.pk))[0]
-        batch.priority = 0 if is_urgent else 1
-        batch.save()
-
         log.info("[Poll.create_with_bulk] Adding the site...")
         if 'django.contrib.sites' in settings.INSTALLED_APPS:
             poll.sites.add(Site.objects.get_current())
@@ -315,23 +320,7 @@ class Poll(models.Model):
     def log_poll_message_debug(self, message):
         log.debug("[poll-" + str(self.pk) + "] " + message)
 
-    def is_ready_to_send(self):
-        batches = MessageBatch.objects.filter(name=self.get_outgoing_message_batch_name()).all()
-        ready = True;
 
-        for batch in batches:
-            if batch.status != "P":
-                ready = False
-                break
-
-        return ready
-
-    def queue_message_batches_to_send(self):
-        batches = MessageBatch.objects.filter(name=self.get_outgoing_message_batch_name()).all()
-        self.log_poll_message_info("Queueing [%d] MessageBatches for sending." % len(batches))
-        for batch in batches:
-            batch.status = "Q"
-            batch.save()
 
     @transaction.commit_on_success
     def start(self):
